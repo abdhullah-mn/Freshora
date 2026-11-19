@@ -1,4 +1,4 @@
-export const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+export const money = value => new Intl.NumberFormat('en-LK', { style: 'currency', currency: 'LKR', currencyDisplay: 'code' }).format(value);
 export const photo = (id, width = 600) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${width}&q=85`;
 export const categories = [
   { name: 'Vegetables', caption: 'Straight from the farm', image: 'photo-1540420773420-3366772f4999', color: '#eef3e8' },

@@ -5,8 +5,8 @@ export const addAddress = async (req,res)=>{
     try{
 
         const {address} = req.body;
-        await Address.create({...address, userId: req.userId});
-        res.json({success:true, message: "Address added successfully"}); // Send a success response
+        const savedAddress = await Address.create({...address, userId: req.userId});
+        res.json({success:true, address: savedAddress, message: "Address added successfully"});
 
     }catch(error){
         console.log(error.message);
@@ -17,7 +17,7 @@ export const addAddress = async (req,res)=>{
 
 //Get Address : /api/address/get
 
-export const getAddress = async (req,re)=>{
+export const getAddress = async (req,res)=>{
     try{
 
         const addresses = await Address.find({userId: req.userId});

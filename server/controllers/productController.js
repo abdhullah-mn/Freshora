@@ -7,11 +7,15 @@ import Product from "../models/Product.js";
 export const addProduct = async(req,res)=>{
     try{
         const productData = JSON.parse(req.body.productData);
+        if (!productData.name?.trim() || !productData.description?.trim() || !productData.category?.trim() || !Number.isFinite(productData.price) || !Number.isFinite(productData.offerPrice) || productData.price < 0 || productData.offerPrice < 0 || productData.offerPrice > productData.price) {
+            return res.status(400).json({ success: false, message: 'Enter valid product details and prices.' });
+        }
         const image = req.files || [];
+        if (!image.length) return res.status(400).json({ success: false, message: 'Add at least one product image.' });
         const imagesUrl = await Promise.all(
             image.map(async(item)=>{
 
-                const result = await cloudinary.uploader.upload(item.path, {resource_type: "image"});
+                const result = await cloudinary.uploader.upload(`data:${item.mimetype};base64,${item.buffer.toString('base64')}`,  {resource_type: "image"});
                 return result.secure_url;
 
             })
@@ -84,7 +88,9 @@ export const changeStock = async(req,res)=>{
 
     try{
         const {id,inStock}=req.body;
-        await Product.findByIdAndUpdate(id, {inStock: inStock}); // Update the inStock status of the product with the specified ID in the database
+        if (typeof inStock !== 'boolean') return res.status(400).json({ success: false, message: 'Invalid stock status' });
+        const product = await Product.findByIdAndUpdate(id, {inStock});
+        if (!product) return res.status(404).json({ success: false, message: 'Product not found' }); // Update the inStock status of the product with the specified ID in the database
         res.json({ success: true, message: "Stock status updated successfully" }); // Send a success response
     }catch(error){
         console.log(error);
@@ -97,7 +103,11 @@ export const changeStock = async(req,res)=>{
 
 export const updateProduct = async (req, res) => {
     try {
-        const product = await Product.findByIdAndUpdate(req.params.id, req.body, {new: true, runValidators: true});
+        const { name, description, category, price, offerPrice, inStock } = req.body;
+        if (!name?.trim() || !description?.trim() || !category?.trim() || !Number.isFinite(price) || !Number.isFinite(offerPrice) || price < 0 || offerPrice < 0 || offerPrice > price || typeof inStock !== 'boolean') {
+            return res.status(400).json({ success: false, message: 'Enter valid product details and prices.' });
+        }
+        const product = await Product.findByIdAndUpdate(req.params.id, { name, description, category, price, offerPrice, inStock }, {new: true, runValidators: true});
         if (!product) return res.status(404).json({success: false, message: "Product not found"});
         res.json({success: true, product});
     } catch (error) {

@@ -1,0 +1,54 @@
+import { test, expect } from '@playwright/test';
+test('seller logs in, creates and edits a product, changes stock, manages an order and deletes a product', async ({ page }) => {
+  let loggedIn = false;
+  let products = [];
+  let status = 'Order Placed';
+  await page.route('**/api/**', async route => {
+    const req = route.request(); const path = new URL(req.url()).pathname;
+    let data = { success: true };
+    if (path === '/api/seller/is-Auth' && !loggedIn) return route.fulfill({ status: 401, json: { success: false } });
+    if (path === '/api/seller/login') loggedIn = true;
+    if (path.includes('/seller/') && !path.includes('/order/')) data.seller = { email: 'owner@example.test' };
+    if (path === '/api/product/add') {
+      expect(req.headers()['content-type']).toContain('multipart/form-data');
+      expect(req.postDataBuffer().toString()).toContain('Fresh carrots');
+      products = [{ _id: 'product1', name: 'Fresh carrots', description: 'Fresh produce', category: 'Vegetables', price: 500, offerPrice: 450, inStock: true, image: [] }];
+    }
+    if (path === '/api/product/product1' && req.method() === 'PUT') products[0] = { ...products[0], ...req.postDataJSON() };
+    if (path === '/api/product/stock') products[0].inStock = req.postDataJSON().inStock;
+    if (path === '/api/product/product1' && req.method() === 'DELETE') products = [];
+    if (path === '/api/product/list') data.products = products;
+    if (path.endsWith('/status')) status = req.postDataJSON().status;
+    if (path === '/api/order/seller') data.orders = [{ _id: 'order12345678', createdAt: new Date().toISOString(), amount: 531, status, paymentType: 'COD', isPaid: false, items: [{ quantity: 1, product: { name: 'Fresh carrots' } }], address: { firstName: 'Test', lastName: 'Buyer', street: '10 Test Road', city: 'Colombo', country: 'Sri Lanka', phoneNumber: '0700000000' } }];
+    await route.fulfill({ json: data });
+  });
+  await page.goto('/seller');
+  await page.getByLabel('Email', { exact: true }).fill('owner@example.test');
+  await page.getByLabel('Password', { exact: true }).fill('test-password');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Seller dashboard' })).toBeVisible();
+  await page.getByRole('button', { name: '+ Add product', exact: true }).click();
+  await page.getByLabel('Product name').fill('Fresh carrots');
+  await page.getByLabel('Description').fill('Fresh produce');
+  await page.getByLabel('Regular price (LKR)').fill('500');
+  await page.getByLabel('Selling price (LKR)').fill('450');
+  await page.locator('input[type=file]').setInputFiles({ name: 'carrots.png', mimeType: 'image/png', buffer: Buffer.from('test fixture') });
+  await page.getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'Fresh carrots', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Edit', exact: true }).click();
+  await page.getByLabel('Selling price (LKR)').fill('425');
+  await page.getByRole('button', { name: 'Save product', exact: true }).click();
+  await expect(page.getByRole('cell').filter({ hasText: '425.00' })).toBeVisible();
+  await page.getByRole('button', { name: 'Toggle stock for Fresh carrots' }).click();
+  await expect(page.getByRole('button', { name: 'Toggle stock for Fresh carrots' })).toHaveText('Out of stock');
+  await page.getByRole('button', { name: 'Orders', exact: true }).click();
+  await expect(page.getByText('Test Buyer')).toBeVisible();
+  await page.getByLabel('Status for order order12345678').selectOption('Delivered');
+  await expect(page.getByLabel('Status for order order12345678')).toHaveValue('Delivered');
+  await page.getByRole('button', { name: 'Products', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('button', { name: 'Delete product', exact: true }).click();
+  await expect(page.getByText('Your catalog is empty.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'Sign out', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible();
+});

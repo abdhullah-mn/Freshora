@@ -5,7 +5,7 @@ import authSeller from "../middlewares/authSeller.js";
 
 const productRouter = express.Router();
 
-productRouter.post("/add", upload.array("images"), authSeller, addProduct);
+productRouter.post("/add", authSeller, upload.array("images", 5), addProduct);
 productRouter.put("/stock", authSeller, changeStock);
 productRouter.put("/:id", authSeller, updateProduct);
 productRouter.delete("/:id", authSeller, deleteProduct);

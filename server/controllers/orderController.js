@@ -9,6 +9,12 @@ try{
     if(!address || !items || items.length === 0){
         return res.json({message: "Please provide all the required fields"});
     }
+    if (!Array.isArray(items) || items.some(item => !Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 99)) {
+        return res.status(400).json({ success: false, message: 'Invalid order quantities' });
+    }
+    if (!await Address.findOne({ _id: address, userId: req.userId })) {
+        return res.status(403).json({ success: false, message: 'Delivery address does not belong to this account' });
+    }
     //if data all are provided we need to calculate the amount of the order
     let amount = await items.reduce(async (acc, item)=> {
         const product = await Product.findById(item.product);
@@ -20,7 +26,7 @@ try{
 );  
 
 // Add tax charge
-amount += amount * 0.18; // Assuming a tax rate of 18%
+amount = Math.round(amount * 118) / 100; // Assuming a tax rate of 18%
 // Create a new order with the provided details and calculated amount
 const order = new Order({
     user_id: req.userId,
@@ -61,9 +67,9 @@ export const getUserOrders = async (req,res)=>{
 
 export const getOrderById = async (req, res) => {
     try {
-        const query = req.userId ? {_id: req.params.id, user_id: req.userId} : {_id: req.params.id};
+        const query = {_id: req.params.id, user_id: req.userId};
         const order = await Order.findOne(query).populate('items.product').populate('address');
-        if (!order) return res.status(404).json({success: false, message: "Order not found"});
+        if (!order) return res.status(404).json({success: false, message: 'Order not found'});
         res.json({success: true, order});
     } catch (error) {
         res.status(400).json({success: false, message: error.message});
@@ -77,7 +83,7 @@ export const updateOrderStatus = async (req, res) => {
             return res.status(400).json({success: false, message: "Invalid order status"});
         }
         const order = await Order.findByIdAndUpdate(req.params.id, {status: req.body.status}, {new: true});
-        if (!order) return res.status(404).json({success: false, message: "Order not found"});
+        if (!order) return res.status(404).json({success: false, message: 'Order not found'});
         res.json({success: true, order});
     } catch (error) {
         res.status(400).json({success: false, message: error.message});

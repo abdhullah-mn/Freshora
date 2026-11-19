@@ -1,121 +1,43 @@
 import User from '../models/user.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import dotenv from 'dotenv';
 
-dotenv.config();
-
-
-// POST /apiuser/register
-export const registerUser = async (req,res)=>{
-    try{
-        const {name,email,password} = req.body;
-
-        if(!name || !email || !password){
-            return res.json({message: "Please fill all the fields"});
-        }
-        const existingUser = await User.findOne({email});
-        if(existingUser){
-            return res.json({message: "User already exists"});
-        }
-//hash the password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const user = await User.create({
-        name,
-        email,
-        password: hashedPassword
-    })
-
-    const token = jwt.sign({id: user._id}, process.env.JWT_SECRET, {expiresIn: '7d'});
-
-    res.cookie('token', token, {
-        httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-        secure: process.env.NODE_ENV === 'production', //use secure cookies in production
-        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Strict', // Adjust sameSite attribute based on environment, CSRF protection
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds, we should set the cookie expiration to match the token expiration for consistency
-    });
-
-    return res.json ({success: true, user: {name: user.name, email: user.email}});
-
-    } 
-    catch (error) {
-    console.log(error); // 👈 add this
-    return res.json({message: error.message});
+export const cookieOptions = () => ({ httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'strict', path: '/' });
+const profile = user => ({ id: String(user._id), name: user.name, email: user.email, role: user.role || 'buyer' });
+export function startSession(user, res) {
+    const account = profile(user);
+    const token = jwt.sign({ id: account.id, role: account.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
+    res.clearCookie('sellerToken', cookieOptions());
+    res.cookie('token', token, { ...cookieOptions(), maxAge: 7 * 24 * 60 * 60 * 1000 });
+    return account;
 }
-}
-// Login user : /api/user/login
-export const login = async (req,res)=>{
-   try{
-     const {email,password} = req.body;
-
-     if(!email || !password){
-        return res.json({message: "Please fill all the fields"});
-     }
-     const user = await User.findOne({email});
-     
-     if(!user){
-        return res.json({message: "User not found"});
-     }
-     const isMatch = await bcrypt.compare(password, user.password);
-     if(!isMatch){
-        return res.json({message: "Invalid credentials"});
-     }
-
-     const token = jwt.sign({id: user._id}, process.env.JWT_SECRET, {expiresIn: '7d'});
-
-     res.cookie('token', token, {
-        httpOnly: true, // Prevents client-side JavaScript from accessing the cookie
-        secure: process.env.NODE_ENV === 'production', //use secure cookies in production
-        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Strict', // Adjust sameSite attribute based on environment, CSRF protection
-        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds, we should set the cookie expiration to match the token expiration for consistency
-     });
-
-    return res.json ({success: true, user: {name: user.name, email: user.email}});
-
-
-
-}
-catch (error) {    
-        console.log(error); // 👈 add this
-        return res.json({message: error.message});
-   }
-}
-
-// /api/seller/is-Auth
-export const isAuth = async(req,res)=>{
-    try{
-
-        const user = await User.findById(req.userId).select('-password');
-        if (!user) {
-            return res.status(404).json({success: false, message: 'User not found'});
-        }
-        return res.json({success: true, user});
- 
-    }catch(error){
-
-        console.log(error);
-        return res.json({message: error.message});      
-
+export const registerUser = async (req, res) => {
+    const { name, email, password, role } = req.body || {};
+    if (typeof name !== 'string' || !name.trim() || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) || typeof password !== 'string' || password.length < 8 || Buffer.byteLength(password, 'utf8') > 72 || !['buyer', 'seller'].includes(role)) {
+        return res.status(400).json({ success: false, message: 'Enter your name, a valid email, an 8-character password (maximum 72 bytes), and select Buyer or Seller.' });
     }
-}
-
-//logout user /api/user/sellerLogout
-
-export const userlogout = async (req,res)=>{
-    try{
-
-    //clear the cookie that stires the jwt
-    res.clearCookie("token",{
-        httpOnly:true,
-        secure:process.env.NODE_ENV === 'production',
-        sameSite: process.env.NODE_ENV === 'production'? 'none':'strict',
-
-    });
-    return res.json({success:true, message:"Logged Out"});
-
-    }catch(error){ 
-        console.log(error);
-        return res.json({message: error.message});
+    try {
+        const normalizedEmail = email.trim().toLowerCase();
+        if (await User.findOne({ email: normalizedEmail })) return res.status(409).json({ success: false, message: 'This email already has an account. Please sign in.' });
+        const user = await User.create({ name: name.trim(), email: normalizedEmail, password: await bcrypt.hash(password, 10), role });
+        return res.status(201).json({ success: true, user: startSession(user, res) });
+    } catch (error) {
+        return res.status(error.code === 11000 ? 409 : 500).json({ success: false, message: error.code === 11000 ? 'This email already has an account.' : 'Unable to create your account. Please try again.' });
     }
-}
+};
+export const login = async (req, res) => {
+    const { email, password } = req.body || {};
+    if (typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password) return res.status(400).json({ success: false, message: 'Email and password are required.' });
+    try {
+        const user = await User.findOne({ email: email.trim().toLowerCase() });
+        if (!user || !await bcrypt.compare(password, user.password)) return res.status(401).json({ success: false, message: 'Invalid email or password.' });
+        if (req.requiredRole && (user.role || 'buyer') !== req.requiredRole) return res.status(403).json({ success: false, message: 'This is a buyer account. Sign in from the store, or create a seller account with another email.' });
+        return res.json({ success: true, user: startSession(user, res), ...(user.role === 'seller' ? { seller: profile(user) } : {}) });
+    } catch { return res.status(500).json({ success: false, message: 'Unable to sign in. Please try again.' }); }
+};
+export const isAuth = (req, res) => res.json({ success: true, user: profile(req.user) });
+export const userlogout = (req, res) => {
+    res.clearCookie('token', cookieOptions());
+    res.clearCookie('sellerToken', cookieOptions());
+    return res.json({ success: true, message: 'Logged out.' });
+};

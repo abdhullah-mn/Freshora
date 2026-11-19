@@ -14,8 +14,13 @@ import orderRouter from './routes/orderRoute.js';
 const app = express();
 const port = process.env.PORT || 4000;
 
-await connectDb();
-await connectCloudinary();
+try {
+  await connectDb();
+  await connectCloudinary();
+} catch (error) {
+  console.error('Server startup failed:', error.message);
+  process.exit(1);
+}
 
 app.use(express.json());
 app.use(cookieParser());
@@ -55,6 +60,10 @@ app.use('/api/product', productRouter);
 app.use('/api/cart', cartRouter);
 app.use('/api/address', addressRouter);
 app.use('/api/order', orderRouter);
+
+app.use((error, req, res, next) => {
+    res.status(400).json({ success: false, message: error.code === 'LIMIT_FILE_SIZE' ? 'Each image must be no larger than 5 MB.' : 'Request could not be processed. Check your input and image files.' });
+});
 
 app.get ('/', (req,res)=>{
     res.send("API is running...");
